@@ -19,12 +19,12 @@ most simple case:
 ```go
 func main() {
     mux := gravita.NewMux()
-	mux.HandleFunc("*", func(ctx context.Context, args [][]interface{}) ([]interface{}, error) {
-		ret := make([]interface{}, 0, len(args))
-		// anything do
-		return ret, nil
-	})
-	lambda.Start(mux.HandleLambdaEvent)
+    mux.HandleFunc("*", func(ctx context.Context, args [][]interface{}) ([]interface{}, error) {
+        ret := make([]interface{}, 0, len(args))
+        // anything do
+        return ret, nil
+    })
+    lambda.Start(mux.HandleLambdaEvent)
 }
 ```
 
@@ -35,7 +35,7 @@ func main() {
     mux.HandleRowFunc("*", func(_ context.Context, args []interface{}) (interface{}, error) {
         return fmt.Sprint(args...), nil
     })
-	lambda.Start(mux.HandleLambdaEvent)
+    lambda.Start(mux.HandleLambdaEvent)
 }
 ```
 
@@ -53,7 +53,7 @@ func main() {
         }),
     )
     mux.Handle("*", handler)
-	lambda.Start(mux.HandleLambdaEvent)
+    lambda.Start(mux.HandleLambdaEvent)
 }
 ```
 
