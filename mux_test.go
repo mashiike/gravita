@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mashiike/gravita"
@@ -205,13 +206,14 @@ func TestMuxHandler(t *testing.T) {
 				{"fuga", 2},
 			},
 			prepare: func(mux *gravita.Mux) {
-				callCount := 0
+				callCount := int32(0)
 				handler := gravita.NewBatchProcessHandler(2, gravita.LambdaUDFHandlerFunc(func(ctx context.Context, args [][]interface{}) ([]interface{}, error) {
 					if len(args) > 2 {
 						return nil, errors.New("too many args")
 					}
-					callCount++
-					if callCount >= 2 {
+					atomic.AddInt32(&callCount, 1)
+					val := atomic.LoadInt32(&callCount)
+					if val >= 2 {
 						return nil, errors.New("too many call")
 					}
 					ret := make([]interface{}, 0, len(args))
@@ -236,13 +238,14 @@ func TestMuxHandler(t *testing.T) {
 				{"fuga", 2},
 			},
 			prepare: func(mux *gravita.Mux) {
-				callCount := 0
+				callCount := int32(0)
 				handler := gravita.NewBatchProcessHandler(2, gravita.LambdaUDFHandlerFunc(func(ctx context.Context, args [][]interface{}) ([]interface{}, error) {
 					if len(args) > 2 {
 						return nil, errors.New("too many args")
 					}
-					callCount++
-					if callCount >= 3 {
+					atomic.AddInt32(&callCount, 1)
+					val := atomic.LoadInt32(&callCount)
+					if val >= 3 {
 						return nil, errors.New("too many call")
 					}
 					ret := make([]interface{}, 0, len(args))
