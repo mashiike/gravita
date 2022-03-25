@@ -39,6 +39,24 @@ func main() {
 }
 ```
 
+If you want to do batch processing, you can do the following:
+```go
+func main() {
+    mux := gravita.NewMux()
+    handler := gravita.NewBatchProcessHandler(
+        100, //batchSize 
+        gravita.LambdaUDFHandlerFunc(func(ctx context.Context, args [][]interface{}) ([]interface{}, error) {
+            //Called in small batches, len(args) == batchSize
+            ret := make([]interface{}, 0, len(args))
+            // anything do
+            return ret, nil
+        }),
+    )
+    mux.Handle("*", handler)
+	lambda.Start(mux.HandleLambdaEvent)
+}
+```
+
 ## LICENSE
 
 MIT License

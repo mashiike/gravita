@@ -40,6 +40,7 @@ func TestMuxHandler(t *testing.T) {
 	cases := []struct {
 		casename string
 		callFunc string
+		callArgs [][]interface{}
 		prepare  func(mux *gravita.Mux)
 		expected string
 	}{
@@ -168,6 +169,93 @@ func TestMuxHandler(t *testing.T) {
 			},
 			expected: `{"error_msg":"invalid", "success": false}`,
 		},
+		{
+			casename: "batch handler",
+			callArgs: [][]interface{}{
+				{"hoge", 1},
+				{"fuga", 2},
+				{"hoge", 1},
+				{"fuga", 2},
+				{"hoge", 1},
+				{"fuga", 2},
+			},
+			prepare: func(mux *gravita.Mux) {
+				handler := gravita.NewBatchProcessHandler(2, gravita.LambdaUDFHandlerFunc(func(ctx context.Context, args [][]interface{}) ([]interface{}, error) {
+					if len(args) > 2 {
+						return nil, errors.New("too many args")
+					}
+					ret := make([]interface{}, 0, len(args))
+					for _, params := range args {
+						ret = append(ret, fmt.Sprint(params[0], "=", params[1]))
+					}
+					return ret, nil
+				}))
+				mux.Handle("*", handler)
+			},
+			expected: `{"results":["hoge=1", "fuga=2", "hoge=1", "fuga=2", "hoge=1", "fuga=2"],"num_records":6, "success": true}`,
+		},
+		{
+			casename: "batch handler distinct",
+			callArgs: [][]interface{}{
+				{"hoge", 1},
+				{"fuga", 2},
+				{"hoge", 1},
+				{"fuga", 2},
+				{"hoge", 1},
+				{"fuga", 2},
+			},
+			prepare: func(mux *gravita.Mux) {
+				callCount := 0
+				handler := gravita.NewBatchProcessHandler(2, gravita.LambdaUDFHandlerFunc(func(ctx context.Context, args [][]interface{}) ([]interface{}, error) {
+					if len(args) > 2 {
+						return nil, errors.New("too many args")
+					}
+					callCount++
+					if callCount >= 2 {
+						return nil, errors.New("too many call")
+					}
+					ret := make([]interface{}, 0, len(args))
+					for _, params := range args {
+						ret = append(ret, fmt.Sprint(params[0], "=", params[1]))
+					}
+					return ret, nil
+				}))
+				handler.Distinct(true)
+				mux.Handle("*", handler)
+			},
+			expected: `{"results":["hoge=1", "fuga=2", "hoge=1", "fuga=2", "hoge=1", "fuga=2"],"num_records":6, "success": true}`,
+		},
+		{
+			casename: "batch handler maxBatchCount",
+			callArgs: [][]interface{}{
+				{"hoge", 1},
+				{"fuga", 2},
+				{"hoge", 1},
+				{"fuga", 2},
+				{"hoge", 1},
+				{"fuga", 2},
+			},
+			prepare: func(mux *gravita.Mux) {
+				callCount := 0
+				handler := gravita.NewBatchProcessHandler(2, gravita.LambdaUDFHandlerFunc(func(ctx context.Context, args [][]interface{}) ([]interface{}, error) {
+					if len(args) > 2 {
+						return nil, errors.New("too many args")
+					}
+					callCount++
+					if callCount >= 3 {
+						return nil, errors.New("too many call")
+					}
+					ret := make([]interface{}, 0, len(args))
+					for _, params := range args {
+						ret = append(ret, fmt.Sprint(params[0], "=", params[1]))
+					}
+					return ret, nil
+				}))
+				handler.MaxBatchCount(2)
+				mux.Handle("*", handler)
+			},
+			expected: `{"results":["hoge=1", "fuga=2", "hoge=1", "fuga=2", null, null],"num_records":6, "success": true}`,
+		},
 	}
 
 	for _, c := range cases {
@@ -178,11 +266,15 @@ func TestMuxHandler(t *testing.T) {
 			if callFunc == "" {
 				callFunc = "test_udf"
 			}
-			actual, err := mux.HandleLambdaEvent(context.Background(), testLambdaUDFEvent(callFunc, [][]interface{}{
-				{"hoge", 1},
-				{"fuga", 2},
-				{"piyo", 3},
-			}))
+			callArgs := c.callArgs
+			if callArgs == nil {
+				callArgs = [][]interface{}{
+					{"hoge", 1},
+					{"fuga", 2},
+					{"piyo", 3},
+				}
+			}
+			actual, err := mux.HandleLambdaEvent(context.Background(), testLambdaUDFEvent(callFunc, callArgs))
 			require.NoError(t, err)
 			require.JSONEq(t, c.expected, actual)
 		})

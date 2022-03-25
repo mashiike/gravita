@@ -2,6 +2,7 @@ package gravita
 
 import (
 	"context"
+	"fmt"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -56,6 +57,96 @@ func (h ParallelRowProcessHandler) ExecuteUDF(ctx context.Context, args [][]inte
 			results[index] = result
 			return nil
 		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+type BatchProcessHandler struct {
+	handler       LambdaUDFHandler
+	distinct      bool
+	batchSize     int
+	maxBatchCount *int
+}
+
+func NewBatchProcessHandler(batchSize int, handler LambdaUDFHandler) *BatchProcessHandler {
+	return &BatchProcessHandler{
+		handler:   handler,
+		distinct:  false,
+		batchSize: batchSize,
+	}
+}
+
+func (h *BatchProcessHandler) Distinct(enable bool) {
+	h.distinct = enable
+}
+
+func (h *BatchProcessHandler) BatchSize(s int) {
+	h.batchSize = s
+}
+
+func (h *BatchProcessHandler) MaxBatchCount(m int) {
+	h.maxBatchCount = &m
+}
+
+func (h *BatchProcessHandler) ExecuteUDF(ctx context.Context, args [][]interface{}) ([]interface{}, error) {
+	results := make([]interface{}, len(args))
+
+	batchArgs := make([][]interface{}, 0, h.batchSize)
+	batchKeys := make([]string, 0, h.batchSize)
+	batchIndexes := make(map[string][]int, h.batchSize)
+
+	for i, rowArgs := range args {
+		var key string
+		if h.distinct {
+			key = fmt.Sprint(rowArgs)
+		} else {
+			key = fmt.Sprintf("%d", i)
+		}
+		indexes, ok := batchIndexes[key]
+		if !ok {
+			batchArgs = append(batchArgs, rowArgs)
+			batchKeys = append(batchKeys, key)
+		}
+		batchIndexes[key] = append(indexes, i)
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var g errgroup.Group
+	batchCount := 0
+	for i := h.batchSize; len(batchArgs) > 0; {
+		if len(batchArgs) < h.batchSize {
+			i = len(batchArgs)
+		}
+		targetArgs := batchArgs[:i]
+		batchArgs = batchArgs[i:]
+		targetKeys := batchKeys[:i]
+		batchKeys = batchKeys[i:]
+		g.Go(func() error {
+			batchResults, err := h.handler.ExecuteUDF(ctx, targetArgs)
+			if err != nil {
+				return err
+			}
+			for j, result := range batchResults {
+				key := targetKeys[j]
+
+				indexes, ok := batchIndexes[key]
+				if !ok {
+					continue
+				}
+				for _, index := range indexes {
+					results[index] = result
+				}
+			}
+			return nil
+		})
+		batchCount++
+		if h.maxBatchCount != nil && batchCount >= *h.maxBatchCount {
+			break
+		}
 	}
 	if err := g.Wait(); err != nil {
 		return nil, err
